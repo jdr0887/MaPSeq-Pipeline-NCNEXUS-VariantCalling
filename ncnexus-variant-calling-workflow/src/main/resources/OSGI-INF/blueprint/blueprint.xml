@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.1.0" default-activation="lazy">
+
+  <cm:property-placeholder persistent-id="edu.unc.mapseq.workflow.ncnexus.variantcalling"
+    update-strategy="reload">
+    <cm:default-properties>
+      <cm:property name="siteName" value="Kure" />
+      <cm:property name="corePoolSize" value="120" />
+      <cm:property name="maxPoolSize" value="120" />
+      <cm:property name="referenceSequence"
+        value="$NCNEXUSVARIANTCALLING_REFERENCES_DIRECTORY/BUILD.37.1/bwa061sam0118/BUILD.37.1.sorted.shortid.fa" />
+      <cm:property name="knownVCF"
+        value="$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/Mills_and_1000G_gold_standard.indels.b37.sites.renci.sorted.shortid.vcf,$NECVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/1000G_phase1.indels.b37.renci.sorted.shortid.vcf" />
+      <cm:property name="knownSites"
+        value="$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/dbsnp_135.b37.renci.sorted.shortid.vcf,$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/Mills_and_1000G_gold_standard.indels.b37.sites.renci.sorted.shortid.vcf,$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/1000G_phase1.indels.b37.renci.sorted.shortid.vcf" />
+      <cm:property name="GATKKey"
+        value="$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/key/xiao_renci.org.key" />
+      <cm:property name="depthOfCoverageIntervalList"
+        value="$NCNEXUSVARIANTCALLING_REFERENCES_DIRECTORY/BUILD.37.1/hg19_interval_list.shortid.interval_list" />
+      <cm:property name="unifiedGenotyperIntervalList" value="$NCNEXUSVARIANTCALLING_RESOURCES_DIRECTORY/nida/ec.shortid.interval_list" />
+      <cm:property name="unifiedGenotyperDBSNP"
+        value="$NCNEXUSVARIANTCALLING_SEQUENCE_ANALYSIS_RESOURCES_DIRECTORY/gatk/bundle/1.5/b37/dbsnp_135.b37.renci.sorted.shortid.vcf" />
+    </cm:default-properties>
+  </cm:property-placeholder>
+
+  <reference id="maPSeqConfigurationService" interface="edu.unc.mapseq.config.MaPSeqConfigurationService" />
+  <reference id="attributeDAO" interface="edu.unc.mapseq.dao.AttributeDAO" />
+  <reference id="fileDataDAO" interface="edu.unc.mapseq.dao.FileDataDAO" />
+  <reference id="sampleDAO" interface="edu.unc.mapseq.dao.SampleDAO" />
+  <reference id="jobDAO" interface="edu.unc.mapseq.dao.JobDAO" />
+  <reference id="studyDAO" interface="edu.unc.mapseq.dao.StudyDAO" />
+  <reference id="flowcellDAO" interface="edu.unc.mapseq.dao.FlowcellDAO" />
+  <reference id="workflowDAO" interface="edu.unc.mapseq.dao.WorkflowDAO" />
+  <reference id="workflowRunDAO" interface="edu.unc.mapseq.dao.WorkflowRunDAO" />
+  <reference id="workflowRunAttemptDAO" interface="edu.unc.mapseq.dao.WorkflowRunAttemptDAO" />
+
+  <bean id="maPSeqDAOBean" class="edu.unc.mapseq.dao.MaPSeqDAOBean">
+    <property name="attributeDAO" ref="attributeDAO" />
+    <property name="fileDataDAO" ref="fileDataDAO" />
+    <property name="sampleDAO" ref="sampleDAO" />
+    <property name="jobDAO" ref="jobDAO" />
+    <property name="studyDAO" ref="studyDAO" />
+    <property name="flowcellDAO" ref="flowcellDAO" />
+    <property name="workflowDAO" ref="workflowDAO" />
+    <property name="workflowRunDAO" ref="workflowRunDAO" />
+    <property name="workflowRunAttemptDAO" ref="workflowRunAttemptDAO" />
+  </bean>
+
+  <bean id="NCNEXUSVariantCallingWorkflowBeanService" class="edu.unc.mapseq.workflow.impl.WorkflowBeanServiceImpl">
+    <property name="corePoolSize" value="${corePoolSize}" />
+    <property name="maxPoolSize" value="${maxPoolSize}" />
+    <property name="maPSeqConfigurationService" ref="maPSeqConfigurationService" />
+    <property name="maPSeqDAOBean" ref="maPSeqDAOBean" />
+    <property name="attributes">
+      <map>
+        <entry key="referenceSequence" value="${referenceSequence}" />
+        <entry key="siteName" value="${siteName}" />
+        <entry key="knownVCF" value="${knownVCF}" />
+        <entry key="knownSites" value="${knownSites}" />
+        <entry key="depthOfCoverageIntervalList" value="${depthOfCoverageIntervalList}" />
+        <entry key="unifiedGenotyperIntervalList" value="${unifiedGenotyperIntervalList}" />
+        <entry key="unifiedGenotyperDBSNP" value="${unifiedGenotyperDBSNP}" />
+        <entry key="GATKKey" value="${GATKKey}" />
+      </map>
+    </property>
+    <cm:managed-properties persistent-id="edu.unc.mapseq.workflow.ncnexus.variantcalling"
+      update-strategy="container-managed" />
+  </bean>
+
+  <service ref="NECVariantCallingWorkflowBeanService" interface="edu.unc.mapseq.workflow.WorkflowBeanService" />
+
+</blueprint>
