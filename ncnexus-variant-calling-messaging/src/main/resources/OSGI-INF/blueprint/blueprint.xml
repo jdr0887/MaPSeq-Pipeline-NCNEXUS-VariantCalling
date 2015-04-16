@@ -8,7 +8,7 @@
     component-name="NCNEXUSVariantCallingWorkflowBeanService" />
 
   <bean id="NCNEXUSVariantCallingMessageListener" class="edu.unc.mapseq.messaging.ncnexus.variantcalling.NCNEXUSVariantCallingMessageListener">
-    <property name="workflowBeanService" ref="NECVariantCallingWorkflowBeanService" />
+    <property name="workflowBeanService" ref="NCNEXUSVariantCallingWorkflowBeanService" />
   </bean>
 
   <bean id="NCNEXUSVariantCallingMessageService" class="edu.unc.mapseq.messaging.ncnexus.variantcalling.NCNEXUSVariantCallingMessageService"
