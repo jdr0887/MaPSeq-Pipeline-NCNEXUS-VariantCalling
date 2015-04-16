@@ -2,13 +2,13 @@
   <parent>
     <groupId>edu.unc.mapseq.pipelines</groupId>
     <artifactId>ncnexus-variant-calling</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.2</version>
   </parent>
   <name>MaPSeq :: Pipelines :: NCNEXUS Variant Calling :: Web Service API</name>
   <modelVersion>4.0.0</modelVersion>
   <groupId>edu.unc.mapseq.pipelines.ncnexus-variant-calling</groupId>
   <artifactId>ncnexus-variant-calling-ws-api</artifactId>
-  <version>0.0.2-SNAPSHOT</version>
+  <version>0.0.2</version>
   <packaging>bundle</packaging>
   <dependencies>
     <dependency>
