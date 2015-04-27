@@ -13,11 +13,6 @@
         <property name="maPSeqDAOBean" ref="maPSeqDAOBean" />
       </action>
     </command>
-    <command>
-      <action class="edu.unc.mapseq.commands.ncnexus.variantcalling.SaveFlagstatAttributesAction">
-        <property name="maPSeqDAOBean" ref="maPSeqDAOBean" />
-      </action>
-    </command>
   </command-bundle>
 
   <reference id="maPSeqConfigurationService" interface="edu.unc.mapseq.config.MaPSeqConfigurationService" />
