@@ -17,8 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import edu.unc.mapseq.commons.ncnexus.variantcalling.SaveDepthOfCoverageAttributesRunnable;
-import edu.unc.mapseq.commons.ncnexus.variantcalling.SaveFlagstatAttributesRunnable;
 import edu.unc.mapseq.dao.MaPSeqDAOException;
+import edu.unc.mapseq.dao.model.Attribute;
 import edu.unc.mapseq.dao.model.FileData;
 import edu.unc.mapseq.dao.model.Flowcell;
 import edu.unc.mapseq.dao.model.MimeType;
@@ -29,10 +29,7 @@ import edu.unc.mapseq.module.gatk.GATKDownsamplingType;
 import edu.unc.mapseq.module.gatk.GATKPhoneHomeType;
 import edu.unc.mapseq.module.gatk2.GATKDepthOfCoverageCLI;
 import edu.unc.mapseq.module.gatk2.GATKUnifiedGenotyperCLI;
-import edu.unc.mapseq.module.picard.PicardAddOrReplaceReadGroups;
-import edu.unc.mapseq.module.picard.PicardMarkDuplicatesCLI;
-import edu.unc.mapseq.module.samtools.SAMToolsFlagstatCLI;
-import edu.unc.mapseq.module.samtools.SAMToolsIndexCLI;
+import edu.unc.mapseq.module.picard.PicardMarkDuplicates;
 import edu.unc.mapseq.workflow.WorkflowException;
 import edu.unc.mapseq.workflow.impl.AbstractSampleWorkflow;
 import edu.unc.mapseq.workflow.impl.WorkflowJobFactory;
@@ -75,14 +72,16 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
                 "unifiedGenotyperIntervalList");
         String unifiedGenotyperDBSNP = getWorkflowBeanService().getAttributes().get("unifiedGenotyperDBSNP");
         String GATKKey = getWorkflowBeanService().getAttributes().get("GATKKey");
+        String subjectMergeHome = getWorkflowBeanService().getAttributes().get("subjectMergeHome");
+        File subjectMergeDirectory = new File(subjectMergeHome, "subject-merge");
 
         Set<Sample> sampleSet = getAggregatedSamples();
         logger.info("sampleSet.size(): {}", sampleSet.size());
 
-        Workflow alignmentWorkflow = null;
+        Workflow mergeBAMWorkflow = null;
         try {
-            alignmentWorkflow = getWorkflowBeanService().getMaPSeqDAOBean().getWorkflowDAO().findByName("NCNEXUSAlignment")
-                    .get(0);
+            mergeBAMWorkflow = getWorkflowBeanService().getMaPSeqDAOBean().getWorkflowDAO()
+                    .findByName("NCNEXUSMergeBAM").get(0);
         } catch (MaPSeqDAOException e1) {
             e1.printStackTrace();
         }
@@ -97,6 +96,28 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
 
             logger.info(sample.toString());
 
+            String subjectName = "";
+            Set<Attribute> sampleAttributes = sample.getAttributes();
+            if (sampleAttributes != null && !sampleAttributes.isEmpty()) {
+                for (Attribute attribute : sampleAttributes) {
+                    if (attribute.getName().equals("subjectName")) {
+                        subjectName = attribute.getValue();
+                        break;
+                    }
+                }
+            }
+
+            if (StringUtils.isEmpty(subjectName)) {
+                throw new WorkflowException("subjectName is empty");
+            }
+
+            File subjectDirectory = new File(subjectMergeDirectory, subjectName);
+            logger.info("subjectDirectory.getAbsolutePath(): {}", subjectDirectory.getAbsolutePath());
+            if (!subjectDirectory.exists()) {
+                logger.error("subjectDirectory doesn't exist");
+                throw new WorkflowException("subjectDirectory doesn't exist");
+            }
+
             Flowcell flowcell = sample.getFlowcell();
             File outputDirectory = new File(sample.getOutputDirectory(), getName());
             File tmpDirectory = new File(outputDirectory, "tmp");
@@ -105,11 +126,10 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
             Set<FileData> fileDataSet = sample.getFileDatas();
 
             File bamFile = WorkflowUtil.findFileByJobAndMimeTypeAndWorkflowId(getWorkflowBeanService()
-                    .getMaPSeqDAOBean(), fileDataSet, PicardAddOrReplaceReadGroups.class, MimeType.APPLICATION_BAM,
-                    alignmentWorkflow.getId());
+                    .getMaPSeqDAOBean(), fileDataSet, PicardMarkDuplicates.class, MimeType.APPLICATION_BAM,
+                    mergeBAMWorkflow.getId());
 
-            String soughtAfterFileName = String.format("%s_%s_L%03d.fixed-rg.bam", flowcell.getName(),
-                    sample.getBarcode(), sample.getLaneIndex());
+            String soughtAfterFileName = String.format("%s.merged.rg.deduped.bam", subjectName);
 
             // 2nd attempt to find bam file
             if (bamFile == null) {
@@ -125,8 +145,8 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
             // 3rd attempt to find bam file
             if (bamFile == null) {
                 logger.debug("still looking for: {}", soughtAfterFileName);
-                File alignmentOutputDirectory = new File(sample.getOutputDirectory(), "NCNEXUSAlignment");
-                for (File outputDirFile : alignmentOutputDirectory.listFiles()) {
+                File mergeBAMOutputDirectory = new File(sample.getOutputDirectory(), "NCNEXUSMergeBAM");
+                for (File outputDirFile : mergeBAMOutputDirectory.listFiles()) {
                     if (outputDirFile.getName().equals(soughtAfterFileName)) {
                         bamFile = outputDirFile;
                         break;
@@ -146,51 +166,13 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
 
             try {
 
-                // deduped job
-                File dedupedBamFile = new File(outputDirectory, bamFile.getName().replace(".bam", ".deduped.bam"));
-
-                CondorJobBuilder builder = WorkflowJobFactory.createJob(++count, PicardMarkDuplicatesCLI.class,
-                        attempt.getId(), sample.getId()).siteName(siteName);
-                File picardMarkDuplicatesMetricsFile = new File(outputDirectory, dedupedBamFile.getName().replace(
-                        ".bam", ".metrics"));
-                builder.addArgument(PicardMarkDuplicatesCLI.INPUT, bamFile.getAbsolutePath())
-                        .addArgument(PicardMarkDuplicatesCLI.OUTPUT, dedupedBamFile.getAbsolutePath())
-                        .addArgument(PicardMarkDuplicatesCLI.METRICSFILE,
-                                picardMarkDuplicatesMetricsFile.getAbsolutePath());
-                CondorJob dedupedBamJob = builder.build();
-                logger.info(dedupedBamJob.toString());
-                graph.addVertex(dedupedBamJob);
-
-                // index job
-                builder = WorkflowJobFactory
-                        .createJob(++count, SAMToolsIndexCLI.class, attempt.getId(), sample.getId()).siteName(siteName);
-                File dedupedBaiFile = new File(outputDirectory, dedupedBamFile.getName().replace(".bam", ".bai"));
-                builder.addArgument(SAMToolsIndexCLI.INPUT, dedupedBamFile.getAbsolutePath()).addArgument(
-                        SAMToolsIndexCLI.OUTPUT, dedupedBaiFile.getAbsolutePath());
-                CondorJob dedupedBaiJob = builder.build();
-                logger.info(dedupedBaiJob.toString());
-                graph.addVertex(dedupedBaiJob);
-                graph.addEdge(dedupedBamJob, dedupedBaiJob);
-
-                // flagstat job
-                builder = WorkflowJobFactory.createJob(++count, SAMToolsFlagstatCLI.class, attempt.getId(),
-                        sample.getId()).siteName(siteName);
-                File dedupedRealignFixPrintReadsFlagstatFile = new File(outputDirectory, dedupedBamFile.getName()
-                        .replace(".bam", ".realign.fix.pr.flagstat"));
-                builder.addArgument(SAMToolsFlagstatCLI.INPUT, dedupedBamFile.getAbsolutePath()).addArgument(
-                        SAMToolsFlagstatCLI.OUTPUT, dedupedRealignFixPrintReadsFlagstatFile.getAbsolutePath());
-                CondorJob dedupedRealignFixPrintReadsFlagstatJob = builder.build();
-                logger.info(dedupedRealignFixPrintReadsFlagstatJob.toString());
-                graph.addVertex(dedupedRealignFixPrintReadsFlagstatJob);
-                graph.addEdge(dedupedBaiJob, dedupedRealignFixPrintReadsFlagstatJob);
-
                 // depth of coverage job
-                builder = WorkflowJobFactory
+                CondorJobBuilder builder = WorkflowJobFactory
                         .createJob(++count, GATKDepthOfCoverageCLI.class, attempt.getId(), sample.getId())
                         .siteName(siteName).initialDirectory(outputDirectory.getAbsolutePath());
-                builder.addArgument(GATKDepthOfCoverageCLI.INPUTFILE, dedupedBamFile.getAbsolutePath())
+                builder.addArgument(GATKDepthOfCoverageCLI.INPUTFILE, bamFile.getAbsolutePath())
                         .addArgument(GATKDepthOfCoverageCLI.OUTPUTPREFIX,
-                                dedupedBamFile.getName().replace(".bam", ".realign.fix.pr.coverage"))
+                                bamFile.getName().replace(".bam", ".realign.fix.pr.coverage"))
                         .addArgument(GATKDepthOfCoverageCLI.KEY, GATKKey)
                         .addArgument(GATKDepthOfCoverageCLI.REFERENCESEQUENCE, referenceSequence)
                         .addArgument(GATKDepthOfCoverageCLI.PHONEHOME, GATKPhoneHomeType.NO_ET.toString())
@@ -200,18 +182,17 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
                         .addArgument(GATKDepthOfCoverageCLI.INTERVALS, depthOfCoverageIntervalList);
                 CondorJob dedupedRealignFixPrintReadsCoverageJob = builder.build();
                 graph.addVertex(dedupedRealignFixPrintReadsCoverageJob);
-                graph.addEdge(dedupedBaiJob, dedupedRealignFixPrintReadsCoverageJob);
 
                 // unified genotyper job
 
                 builder = WorkflowJobFactory
                         .createJob(++count, GATKUnifiedGenotyperCLI.class, attempt.getId(), sample.getId())
                         .siteName(siteName).numberOfProcessors(4);
-                File dedupedRealignFixPrintReadsVcfFile = new File(outputDirectory, dedupedBamFile.getName().replace(
-                        ".bam", ".realign.fix.pr.vcf"));
-                File gatkUnifiedGenotyperMetrics = new File(outputDirectory, dedupedBamFile.getName().replace(".bam",
+                File dedupedRealignFixPrintReadsVcfFile = new File(outputDirectory, bamFile.getName().replace(".bam",
+                        ".realign.fix.pr.vcf"));
+                File gatkUnifiedGenotyperMetrics = new File(outputDirectory, bamFile.getName().replace(".bam",
                         ".metrics"));
-                builder.addArgument(GATKUnifiedGenotyperCLI.INPUTFILE, dedupedBamFile.getAbsolutePath())
+                builder.addArgument(GATKUnifiedGenotyperCLI.INPUTFILE, bamFile.getAbsolutePath())
                         .addArgument(GATKUnifiedGenotyperCLI.OUT, dedupedRealignFixPrintReadsVcfFile.getAbsolutePath())
                         .addArgument(GATKUnifiedGenotyperCLI.KEY, GATKKey)
                         .addArgument(GATKUnifiedGenotyperCLI.INTERVALS, unifiedGenotyperIntervalList)
@@ -259,11 +240,6 @@ public class NCNEXUSVariantCallingWorkflow extends AbstractSampleWorkflow {
             }
 
             ExecutorService es = Executors.newSingleThreadExecutor();
-
-            SaveFlagstatAttributesRunnable flagstatRunnable = new SaveFlagstatAttributesRunnable();
-            flagstatRunnable.setMapseqDAOBean(getWorkflowBeanService().getMaPSeqDAOBean());
-            flagstatRunnable.setSampleId(sample.getId());
-            es.execute(flagstatRunnable);
 
             SaveDepthOfCoverageAttributesRunnable docRunnable = new SaveDepthOfCoverageAttributesRunnable();
             docRunnable.setMapseqDAOBean(getWorkflowBeanService().getMaPSeqDAOBean());
